@@ -21,6 +21,15 @@ Abre `http://localhost:4200/` en el navegador.
 
 El tiempo no asignado aparece como una categoría del gráfico cuando se elige el periodo completo. Si las actividades superan las horas disponibles, la calculadora avisa y muestra la proporción del tiempo registrado.
 
+## Desplegar en Netlify
+
+El archivo `netlify.toml` define el comando de compilación y la carpeta de publicación que espera Angular:
+
+- **Build command:** `npm run build`
+- **Publish directory:** `dist/inversion-tiempo-calculadora/browser`
+
+La carpeta `browser` es la salida estática de Angular. Si Netlify conserva una configuración anterior en la interfaz, establece ahí también esa misma carpeta de publicación. Asegúrate de que el directorio base de Netlify sea la carpeta donde está este `package.json`.
+
 ```bash
 npm run build
 npm test -- --watch=false
