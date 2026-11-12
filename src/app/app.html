@@ -17,7 +17,7 @@
       <div>
         <p class="eyebrow">TU PLAN, CON PERSPECTIVA</p>
         <h1>Las horas de hoy<br /><span>construyen tu mañana.</span></h1>
-        <p class="intro-copy">Organiza tus actividades y mira cómo se distribuye tu tiempo, día a día.</p>
+        <p class="intro-copy">Registra en qué inviertes tus horas, detecta distracciones y observa su impacto a lo largo del tiempo.</p>
       </div>
       <div class="intro-decoration" aria-hidden="true">
         <span class="decoration-orbit orbit-one"></span>
@@ -100,8 +100,12 @@
             <button class="add-activity-button" type="button" (click)="addActivity()">
               <span aria-hidden="true">+</span> Nueva actividad
             </button>
+            <button class="data-button" type="button" (click)="exportData()">Descargar respaldo JSON</button>
+            <label class="data-button import-button" for="import-data">Cargar respaldo JSON</label>
+            <input id="import-data" class="sr-only" type="file" accept="application/json,.json" (change)="importFile($event)" />
           </div>
           <p class="toolbar-hint">Puedes nombrar tus actividades y ajustar cada día por separado.</p>
+          <p class="storage-status" role="status">{{ storageStatus() }}</p>
         </div>
 
         <div class="schedule-table-scroll" role="region" aria-label="Horario semanal editable" tabindex="0">
@@ -135,6 +139,16 @@
                         <span class="activity-heading-name">{{ activity.name }}</span>
                       }
                     </div>
+                    <button
+                      class="distraction-toggle"
+                      [class.distraction-toggle-on]="activity.distraction"
+                      type="button"
+                      [attr.aria-pressed]="activity.distraction"
+                      [attr.aria-label]="(activity.distraction ? 'Quitar etiqueta distracción de ' : 'Marcar como distracción: ') + activityName(activity)"
+                      (click)="toggleDistraction(activity.id)"
+                    >
+                      <span aria-hidden="true">●</span> Distracción
+                    </button>
                   </th>
                 }
               </tr>
@@ -273,6 +287,63 @@
           }
         </p>
       </aside>
+    </section>
+
+    <section class="distraction-card" aria-labelledby="distraction-title">
+      <div class="distraction-summary">
+        <p class="eyebrow">MIRA EL COSTO DE TUS HÁBITOS</p>
+        <h2 id="distraction-title">Tu tiempo en distracciones</h2>
+        <p class="section-description">Marca cualquier actividad como distracción para ver cuánto tiempo ocupa y en qué se concentra.</p>
+        <div class="distraction-metrics">
+          <div>
+            <span>Por semana</span>
+            <strong>{{ formatDuration(weeklyDistractionMinutes()) }}</strong>
+          </div>
+          <div>
+            <span>En un año</span>
+            <strong>{{ formatDuration(yearlyDistractionMinutes()) }}</strong>
+          </div>
+        </div>
+        <p class="distraction-reflection">
+          @if (yearlyDistractionMinutes() > 0) {
+            En un año, ese tiempo equivale a <strong>{{ distractionDayEquivalent() | number:'1.0-1' }} días completos</strong>.
+          } @else {
+            Aún no has marcado actividades como distracción. Elige una en la tabla para empezar a medirlo.
+          }
+        </p>
+      </div>
+
+      <div class="distraction-chart-panel">
+        <div class="distraction-chart-heading">
+          <h3>¿En qué se va ese tiempo?</h3>
+          <span>{{ chartMode() === 'day' ? selectedChartDayName() : 'Semana' }}</span>
+        </div>
+        <div class="pie-layout distraction-pie-layout">
+          <div
+            class="pie-chart distraction-pie-chart"
+            [style.background]="distractionChartTotalMinutes() > 0 ? distractionChartGradient() : 'conic-gradient(#282e29 0deg 360deg)'"
+            role="img"
+            [attr.aria-label]="'Gráfico de tiempo en distracciones: ' + formatDuration(distractionChartTotalMinutes())"
+          >
+            <div class="pie-center">
+              <strong>{{ formatDuration(distractionChartTotalMinutes()) }}</strong>
+              <span>{{ chartMode() === 'day' ? 'ese día' : 'esa semana' }}</span>
+            </div>
+          </div>
+          <div class="chart-legend">
+            @for (entry of distractionChartEntries(); track entry.id) {
+              <div class="legend-row">
+                <span class="legend-swatch" [style.background]="entry.color" aria-hidden="true"></span>
+                <span class="legend-name" [title]="entry.name">{{ entry.name }}</span>
+                <span class="legend-value">{{ formatDuration(entry.minutes) }}</span>
+                <span class="legend-percent">{{ chartPercent(entry.percent) }}</span>
+              </div>
+            } @empty {
+              <p class="chart-empty">No hay tiempo marcado como distracción en este periodo.</p>
+            }
+          </div>
+        </div>
+      </div>
     </section>
 
     <footer class="page-footer">

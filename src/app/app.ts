@@ -1,4 +1,5 @@
-import { Component, computed, signal } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
+import { Component, computed, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 type DayId = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
@@ -19,6 +20,7 @@ interface Activity {
   name: string;
   color: string;
   enabled: boolean;
+  distraction: boolean;
   minutesByDay: Record<DayId, number>;
 }
 
@@ -50,6 +52,91 @@ const ZERO_MINUTES: Record<DayId, number> = {
   sat: 0,
   sun: 0,
 };
+const STORAGE_KEY = 'ritmo-time-data';
+const DAY_IDS: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+interface RestoredState {
+  activities: Activity[];
+  nextActivityId: number;
+  message: string;
+}
+
+function nextCustomActivityId(activities: Activity[]): number {
+  return activities.reduce((nextId, activity) => {
+    const match = /^activity-(\d+)$/.exec(activity.id);
+    return match ? Math.max(nextId, Number(match[1]) + 1) : nextId;
+  }, 1);
+}
+
+function isActivityList(value: unknown): value is Activity[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  const ids = new Set<string>();
+  const builtInKinds = new Set<ActivityKind>();
+  return value.every((item: unknown) => {
+    if (typeof item !== 'object' || item === null) {
+      return false;
+    }
+
+    const activity = item as Record<string, unknown>;
+    if (
+      typeof activity['id'] !== 'string' ||
+      !activity['id'] ||
+      ids.has(activity['id']) ||
+      !['custom', 'work', 'lunch'].includes(String(activity['kind'])) ||
+      typeof activity['name'] !== 'string' ||
+      activity['name'].length > 30 ||
+      typeof activity['color'] !== 'string' ||
+      !/^#[0-9a-f]{6}$/i.test(activity['color']) ||
+      typeof activity['enabled'] !== 'boolean' ||
+      typeof activity['distraction'] !== 'boolean' ||
+      typeof activity['minutesByDay'] !== 'object' ||
+      activity['minutesByDay'] === null
+    ) {
+      return false;
+    }
+
+    const kind = activity['kind'] as ActivityKind;
+    if (kind !== 'custom' && builtInKinds.has(kind)) {
+      return false;
+    }
+    if (kind !== 'custom') {
+      builtInKinds.add(kind);
+    }
+
+    const minutes = activity['minutesByDay'] as Record<string, unknown>;
+    if (!DAY_IDS.every((day) => Number.isInteger(minutes[day]) && Number(minutes[day]) >= 0 && Number(minutes[day]) <= 1440)) {
+      return false;
+    }
+
+    ids.add(activity['id'] as string);
+    return true;
+  });
+}
+
+function loadSavedState(): RestoredState {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      return { activities: createExampleActivities(), nextActivityId: 1, message: 'Guardado automático activado' };
+    }
+
+    const parsed: unknown = JSON.parse(stored);
+    if (typeof parsed !== 'object' || parsed === null || !('activities' in parsed) || !isActivityList(parsed.activities)) {
+      return { activities: createExampleActivities(), nextActivityId: 1, message: 'No se pudo leer el guardado; se cargó el ejemplo' };
+    }
+
+    return {
+      activities: parsed.activities,
+      nextActivityId: nextCustomActivityId(parsed.activities),
+      message: 'Datos recuperados de este navegador',
+    };
+  } catch {
+    return { activities: createExampleActivities(), nextActivityId: 1, message: 'No se pudo acceder al almacenamiento del navegador' };
+  }
+}
 
 function createExampleActivities(): Activity[] {
   return [
@@ -59,20 +146,23 @@ function createExampleActivities(): Activity[] {
       name: 'Estudio',
       color: ACTIVITY_COLORS[0],
       enabled: true,
+      distraction: false,
       minutesByDay: { mon: 60, tue: 120, wed: 60, thu: 120, fri: 60, sat: 120, sun: 0 },
     },
   ];
 }
 
 @Component({
-  imports: [FormsModule],
+  imports: [DecimalPipe, FormsModule],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
 })
 export class App {
   readonly weekdays = WEEKDAYS;
-  readonly activities = signal<Activity[]>(createExampleActivities());
+  private readonly restoredState = loadSavedState();
+  readonly activities = signal<Activity[]>(this.restoredState.activities);
+  readonly storageStatus = signal(this.restoredState.message);
   readonly activeActivities = computed(() => this.activities().filter((activity) => activity.enabled));
   readonly chartMode = signal<ChartMode>('day');
   readonly selectedChartDay = signal<DayId>('mon');
@@ -86,6 +176,17 @@ export class App {
   );
   readonly monthlyMinutes = computed(() => (this.weeklyMinutes() * 52) / 12);
   readonly yearlyMinutes = computed(() => this.weeklyMinutes() * 52);
+  readonly weeklyDistractionMinutes = computed(() =>
+    this.activeActivities()
+      .filter((activity) => activity.distraction)
+      .reduce(
+        (total, activity) =>
+          total + WEEKDAYS.reduce((activityTotal, day) => activityTotal + activity.minutesByDay[day.id], 0),
+        0,
+      ),
+  );
+  readonly yearlyDistractionMinutes = computed(() => this.weeklyDistractionMinutes() * 52);
+  readonly distractionDayEquivalent = computed(() => this.yearlyDistractionMinutes() / (24 * 60));
   readonly activeDayCount = computed(
     () => WEEKDAYS.filter((day) => this.dayTotalMinutes(day.id) > 0).length,
   );
@@ -132,8 +233,39 @@ export class App {
     const periodMinutes = this.chartMode() === 'day' ? 24 * 60 : 7 * 24 * 60;
     return this.chartTotalMinutes() > periodMinutes;
   });
+  readonly distractionChartEntries = computed<ChartEntry[]>(() => {
+    const entries = this.activeActivities()
+      .filter((activity) => activity.distraction)
+      .map((activity) => ({
+        id: activity.id,
+        name: this.activityName(activity),
+        color: activity.color,
+        minutes:
+          this.chartMode() === 'day'
+            ? activity.minutesByDay[this.selectedChartDay()]
+            : WEEKDAYS.reduce((total, day) => total + activity.minutesByDay[day.id], 0),
+        percent: 0,
+      }))
+      .filter((entry) => entry.minutes > 0);
+    const total = entries.reduce((sum, entry) => sum + entry.minutes, 0);
+    return entries.map((entry) => ({ ...entry, percent: total > 0 ? (entry.minutes / total) * 100 : 0 }));
+  });
+  readonly distractionChartTotalMinutes = computed(() =>
+    this.distractionChartEntries().reduce((total, entry) => total + entry.minutes, 0),
+  );
 
-  private nextActivityId = 1;
+  private nextActivityId = this.restoredState.nextActivityId;
+
+  constructor() {
+    effect(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, activities: this.activities() }));
+        this.storageStatus.set('Guardado automáticamente en este navegador');
+      } catch {
+        this.storageStatus.set('No se pudieron guardar los cambios en este navegador');
+      }
+    });
+  }
 
   updateActivityDuration(
     activityId: string,
@@ -200,6 +332,7 @@ export class App {
           kind,
           ...definition,
           enabled: true,
+          distraction: false,
           minutesByDay: { ...ZERO_MINUTES },
         },
       ];
@@ -220,6 +353,7 @@ export class App {
         name: `Actividad ${this.nextActivityId - 1}`,
         color: ACTIVITY_COLORS[(this.nextActivityId - 1) % ACTIVITY_COLORS.length],
         enabled: true,
+        distraction: false,
         minutesByDay: { ...ZERO_MINUTES },
       },
     ]);
@@ -250,6 +384,64 @@ export class App {
     this.activities.update((activities) => activities.filter((activity) => activity.id !== activityId));
   }
 
+  toggleDistraction(activityId: string): void {
+    this.activities.update((activities) =>
+      activities.map((activity) =>
+        activity.id === activityId ? { ...activity, distraction: !activity.distraction } : activity,
+      ),
+    );
+  }
+
+  exportData(): void {
+    const contents = JSON.stringify({ version: 1, activities: this.activities() }, null, 2);
+    const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'ritmo-respaldo.json';
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    this.storageStatus.set('Respaldo JSON descargado');
+  }
+
+  async importFile(event: Event): Promise<void> {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      this.importData(await file.text());
+    } catch {
+      this.storageStatus.set('No se pudo leer el archivo JSON');
+    } finally {
+      input.value = '';
+    }
+  }
+
+  importData(contents: string): void {
+    try {
+      const parsed: unknown = JSON.parse(contents);
+      if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        !('version' in parsed) ||
+        parsed.version !== 1 ||
+        !('activities' in parsed) ||
+        !isActivityList(parsed.activities)
+      ) {
+        this.storageStatus.set('El archivo no tiene un formato de respaldo válido');
+        return;
+      }
+
+      this.activities.set(parsed.activities);
+      this.nextActivityId = nextCustomActivityId(parsed.activities);
+      this.storageStatus.set('Respaldo importado correctamente');
+    } catch {
+      this.storageStatus.set('El archivo no contiene JSON válido');
+    }
+  }
+
   activityName(activity: Activity): string {
     return activity.name.trim() || 'Actividad';
   }
@@ -268,6 +460,22 @@ export class App {
 
   chartGradient(): string {
     const entries = this.chartEntries();
+    if (entries.length === 0) {
+      return 'conic-gradient(#282e29 0deg 360deg)';
+    }
+
+    let start = 0;
+    const slices = entries.map((entry) => {
+      const end = start + entry.percent * 3.6;
+      const slice = `${entry.color} ${start}deg ${end}deg`;
+      start = end;
+      return slice;
+    });
+    return `conic-gradient(${slices.join(', ')})`;
+  }
+
+  distractionChartGradient(): string {
+    const entries = this.distractionChartEntries();
     if (entries.length === 0) {
       return 'conic-gradient(#282e29 0deg 360deg)';
     }

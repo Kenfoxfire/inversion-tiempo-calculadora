@@ -796,6 +796,36 @@ button {
   font-size: 9px;
 }
 
+.data-button {
+  display: inline-flex;
+  min-height: 31px;
+  align-items: center;
+  padding: 6px 9px;
+  border: 1px solid #39483a;
+  border-radius: 7px;
+  background: #222b23;
+  color: #bad6a9;
+  cursor: pointer;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.data-button:hover {
+  border-color: #83a36d;
+  background: #29352a;
+  color: #e0efd5;
+}
+
+.import-button {
+  border-style: dashed;
+}
+
+.storage-status {
+  margin: 7px 0 0;
+  color: #8e9b89;
+  font-size: 9px;
+}
+
 .schedule-table-scroll {
   width: 100%;
   margin-top: 14px;
@@ -909,6 +939,36 @@ button {
   overflow: hidden;
   color: #cbd6c3;
   text-overflow: ellipsis;
+}
+
+.distraction-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 0 0 13px;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #7e887d;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.distraction-toggle > span {
+  color: #6d776c;
+  font-size: 7px;
+}
+
+.distraction-toggle:hover,
+.distraction-toggle-on {
+  border-color: rgba(224, 138, 126, 0.26);
+  background: rgba(184, 96, 83, 0.12);
+  color: #e6aaa0;
+}
+
+.distraction-toggle-on > span {
+  color: #e18a7e;
 }
 
 .remove-activity-button {
@@ -1178,9 +1238,110 @@ button {
   line-height: 1.5;
 }
 
+.distraction-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.8fr);
+  gap: 30px;
+  margin-top: 15px;
+  padding: 23px;
+  border: 1px solid #3c302e;
+  border-radius: 14px;
+  background: linear-gradient(125deg, rgba(42, 31, 29, 0.92), rgba(25, 29, 26, 0.98) 60%);
+}
+
+.distraction-card h2 {
+  margin: 0;
+  color: #f0e9e5;
+  font-size: 19px;
+  font-weight: 580;
+  letter-spacing: -0.55px;
+}
+
+.distraction-summary .section-description {
+  max-width: 470px;
+  line-height: 1.6;
+}
+
+.distraction-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 34px;
+  margin-top: 22px;
+}
+
+.distraction-metrics > div {
+  display: grid;
+  gap: 5px;
+}
+
+.distraction-metrics span,
+.distraction-chart-heading span {
+  color: #a18d86;
+  font-size: 10px;
+}
+
+.distraction-metrics strong {
+  color: #e8c1b6;
+  font-size: 22px;
+  font-weight: 620;
+  letter-spacing: -0.7px;
+}
+
+.distraction-reflection {
+  margin: 15px 0 0;
+  color: #a99992;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.distraction-reflection strong {
+  color: #efb6a8;
+  font-weight: 650;
+}
+
+.distraction-chart-panel {
+  align-self: center;
+  padding: 15px;
+  border: 1px solid rgba(202, 137, 122, 0.13);
+  border-radius: 10px;
+  background: rgba(15, 18, 16, 0.3);
+}
+
+.distraction-chart-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.distraction-chart-heading h3 {
+  margin: 0;
+  color: #e2d5ce;
+  font-size: 12px;
+  font-weight: 570;
+}
+
+.distraction-pie-layout {
+  margin-top: 14px;
+}
+
+.distraction-pie-chart .pie-center {
+  border-color: #473633;
+  background: #211b19;
+}
+
+.distraction-pie-chart .pie-center strong {
+  color: #f0d2c8;
+}
+
 @media (max-width: 760px) {
   .insight-card {
     min-height: 0;
+  }
+
+  .distraction-card {
+    grid-template-columns: 1fr;
+    gap: 20px;
   }
 }
 
@@ -1212,7 +1373,8 @@ button {
   }
 
   .category-toggle,
-  .add-activity-button {
+  .add-activity-button,
+  .data-button {
     padding: 6px;
     font-size: 9px;
   }
@@ -1237,5 +1399,13 @@ button {
 
   .chart-legend {
     width: 100%;
+  }
+
+  .distraction-card {
+    padding: 19px 15px 15px;
+  }
+
+  .distraction-metrics {
+    gap: 24px;
   }
 }

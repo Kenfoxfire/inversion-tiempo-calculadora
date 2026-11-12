@@ -3,6 +3,7 @@ import { App } from './app';
 
 describe('App', () => {
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [App],
     })
@@ -87,5 +88,61 @@ describe('App', () => {
     expect(app.activities()).toHaveLength(1);
     expect(app.activities()[0].minutesByDay.mon).toBe(60);
     expect(app.includeUnassigned()).toBe(true);
+  });
+
+  it('should track distraction time separately and show its breakdown', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.addActivity();
+    const activity = app.activities()[1];
+    app.renameActivity(activity.id, 'Redes');
+    app.updateActivityDuration(activity.id, 'mon', 'minutes', 30);
+    app.updateActivityDuration(activity.id, 'tue', 'hours', 1);
+    app.toggleDistraction(activity.id);
+
+    expect(app.weeklyDistractionMinutes()).toBe(90);
+    expect(app.yearlyDistractionMinutes()).toBe(4680);
+    expect(app.distractionChartEntries()).toEqual([
+      expect.objectContaining({ name: 'Redes', minutes: 30, percent: 100 }),
+    ]);
+
+    app.setChartMode('week');
+    expect(app.distractionChartEntries()[0].minutes).toBe(90);
+  });
+
+  it('should import a valid backup, advance activity ids, and reject invalid data', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.importData(JSON.stringify({
+      version: 1,
+      activities: [{
+        id: 'activity-8',
+        kind: 'custom',
+        name: 'Video',
+        color: '#a8ce83',
+        enabled: true,
+        distraction: true,
+        minutesByDay: { mon: 75, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 },
+      }],
+    }));
+
+    expect(app.weeklyDistractionMinutes()).toBe(75);
+    app.addActivity();
+    expect(app.activities()[1].id).toBe('activity-9');
+
+    app.importData('{"version":2,"activities":[]}');
+    expect(app.weeklyDistractionMinutes()).toBe(75);
+    expect(app.storageStatus()).toContain('formato');
+  });
+
+  it('should save activity changes in browser storage', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.toggleDistraction('study');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const saved = JSON.parse(localStorage.getItem('ritmo-time-data') ?? '{}');
+    expect(saved.activities[0].distraction).toBe(true);
   });
 });
