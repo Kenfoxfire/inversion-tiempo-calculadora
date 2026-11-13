@@ -3,10 +3,11 @@ import { Component, computed, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 type DayId = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
-type ActivityKind = 'custom' | 'work' | 'lunch';
-type BuiltInActivityKind = Exclude<ActivityKind, 'custom'>;
+type ActivityKind = 'custom' | 'study' | 'work' | 'lunch';
+type BuiltInActivityKind = Exclude<ActivityKind, 'custom' | 'study'>;
 type DurationField = 'hours' | 'minutes';
 type ChartMode = 'day' | 'week';
+type Scenario = 'base' | 'alternative';
 
 interface Weekday {
   id: DayId;
@@ -57,15 +58,53 @@ const DAY_IDS: DayId[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 interface RestoredState {
   activities: Activity[];
-  nextActivityId: number;
+  alternativeActivities: Activity[] | null;
+  scenario: Scenario;
   message: string;
 }
 
-function nextCustomActivityId(activities: Activity[]): number {
-  return activities.reduce((nextId, activity) => {
+interface ScenarioComparison {
+  baseMinutes: number;
+  alternativeMinutes: number;
+  baseStudyMinutes: number;
+  alternativeStudyMinutes: number;
+  baseDistractionMinutes: number;
+  alternativeDistractionMinutes: number;
+}
+
+interface ImpactEntry {
+  id: string;
+  name: string;
+  color: string;
+  minutes: number;
+}
+
+function nextCustomActivityId(...schedules: Activity[][]): number {
+  return schedules.flat().reduce((nextId, activity) => {
     const match = /^activity-(\d+)$/.exec(activity.id);
     return match ? Math.max(nextId, Number(match[1]) + 1) : nextId;
   }, 1);
+}
+
+function ensureStudyActivity(activities: Activity[]): Activity[] {
+  const savedStudy = activities.find((activity) => activity.id === 'study' || activity.kind === 'study');
+  const study: Activity = {
+    id: 'study',
+    kind: 'study',
+    name: 'Estudio',
+    color: ACTIVITY_COLORS[0],
+    enabled: true,
+    distraction: false,
+    minutesByDay: savedStudy ? { ...savedStudy.minutesByDay } : { ...ZERO_MINUTES },
+  };
+  return [study, ...activities.filter((activity) => activity !== savedStudy)];
+}
+
+function cloneActivities(activities: Activity[]): Activity[] {
+  return activities.map((activity) => ({
+    ...activity,
+    minutesByDay: { ...activity.minutesByDay },
+  }));
 }
 
 function isActivityList(value: unknown): value is Activity[] {
@@ -85,7 +124,7 @@ function isActivityList(value: unknown): value is Activity[] {
       typeof activity['id'] !== 'string' ||
       !activity['id'] ||
       ids.has(activity['id']) ||
-      !['custom', 'work', 'lunch'].includes(String(activity['kind'])) ||
+      !['custom', 'study', 'work', 'lunch'].includes(String(activity['kind'])) ||
       typeof activity['name'] !== 'string' ||
       activity['name'].length > 30 ||
       typeof activity['color'] !== 'string' ||
@@ -100,6 +139,9 @@ function isActivityList(value: unknown): value is Activity[] {
 
     const kind = activity['kind'] as ActivityKind;
     if (kind !== 'custom' && builtInKinds.has(kind)) {
+      return false;
+    }
+    if (kind === 'study' && (activity['id'] !== 'study' || activity['distraction'] === true)) {
       return false;
     }
     if (kind !== 'custom') {
@@ -120,21 +162,46 @@ function loadSavedState(): RestoredState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
-      return { activities: createExampleActivities(), nextActivityId: 1, message: 'Guardado automático activado' };
+      return { activities: createExampleActivities(), alternativeActivities: null, scenario: 'base', message: 'Guardado automático activado' };
     }
 
     const parsed: unknown = JSON.parse(stored);
-    if (typeof parsed !== 'object' || parsed === null || !('activities' in parsed) || !isActivityList(parsed.activities)) {
-      return { activities: createExampleActivities(), nextActivityId: 1, message: 'No se pudo leer el guardado; se cargó el ejemplo' };
+    if (typeof parsed !== 'object' || parsed === null) {
+      return { activities: createExampleActivities(), alternativeActivities: null, scenario: 'base', message: 'No se pudo leer el guardado; se cargó el ejemplo' };
     }
 
-    return {
-      activities: parsed.activities,
-      nextActivityId: nextCustomActivityId(parsed.activities),
-      message: 'Datos recuperados de este navegador',
-    };
+    if ('version' in parsed && parsed.version === 1 && 'activities' in parsed && isActivityList(parsed.activities)) {
+      return {
+        activities: ensureStudyActivity(parsed.activities),
+        alternativeActivities: null,
+        scenario: 'base',
+        message: 'Datos recuperados de este navegador',
+      };
+    }
+
+    if (
+      'version' in parsed &&
+      parsed.version === 2 &&
+      'baseActivities' in parsed &&
+      isActivityList(parsed.baseActivities) &&
+      'alternativeActivities' in parsed &&
+      (parsed.alternativeActivities === null || isActivityList(parsed.alternativeActivities)) &&
+      'scenario' in parsed &&
+      (parsed.scenario === 'base' || parsed.scenario === 'alternative')
+    ) {
+      const base = ensureStudyActivity(parsed.baseActivities);
+      const alternative = parsed.alternativeActivities === null ? null : ensureStudyActivity(parsed.alternativeActivities);
+      return {
+        activities: base,
+        alternativeActivities: alternative,
+        scenario: parsed.scenario === 'alternative' && alternative ? 'alternative' : 'base',
+        message: 'Datos recuperados de este navegador',
+      };
+    }
+
+    return { activities: createExampleActivities(), alternativeActivities: null, scenario: 'base', message: 'No se pudo leer el guardado; se cargó el ejemplo' };
   } catch {
-    return { activities: createExampleActivities(), nextActivityId: 1, message: 'No se pudo acceder al almacenamiento del navegador' };
+    return { activities: createExampleActivities(), alternativeActivities: null, scenario: 'base', message: 'No se pudo acceder al almacenamiento del navegador' };
   }
 }
 
@@ -142,7 +209,7 @@ function createExampleActivities(): Activity[] {
   return [
     {
       id: 'study',
-      kind: 'custom',
+      kind: 'study',
       name: 'Estudio',
       color: ACTIVITY_COLORS[0],
       enabled: true,
@@ -161,7 +228,20 @@ function createExampleActivities(): Activity[] {
 export class App {
   readonly weekdays = WEEKDAYS;
   private readonly restoredState = loadSavedState();
-  readonly activities = signal<Activity[]>(this.restoredState.activities);
+  readonly baseActivities = signal(this.restoredState.activities);
+  readonly alternativeActivities = signal(this.restoredState.alternativeActivities);
+  readonly activeScenario = signal(this.restoredState.scenario);
+  readonly activities = signal<Activity[]>(
+    this.restoredState.scenario === 'alternative' && this.restoredState.alternativeActivities
+      ? this.restoredState.alternativeActivities
+      : this.restoredState.activities,
+  );
+  readonly hasAlternative = computed(() => this.alternativeActivities() !== null);
+  readonly scenarioSchedules = computed(() =>
+    this.activeScenario() === 'base'
+      ? { base: this.activities(), alternative: this.alternativeActivities() }
+      : { base: this.baseActivities(), alternative: this.activities() },
+  );
   readonly storageStatus = signal(this.restoredState.message);
   readonly activeActivities = computed(() => this.activities().filter((activity) => activity.enabled));
   readonly chartMode = signal<ChartMode>('day');
@@ -176,6 +256,13 @@ export class App {
   );
   readonly monthlyMinutes = computed(() => (this.weeklyMinutes() * 52) / 12);
   readonly yearlyMinutes = computed(() => this.weeklyMinutes() * 52);
+  readonly weeklyStudyMinutes = computed(() =>
+    this.activeActivities()
+      .filter((activity) => activity.kind === 'study')
+      .reduce((total, activity) => total + WEEKDAYS.reduce((sum, day) => sum + activity.minutesByDay[day.id], 0), 0),
+  );
+  readonly monthlyStudyMinutes = computed(() => (this.weeklyStudyMinutes() * 52) / 12);
+  readonly yearlyStudyMinutes = computed(() => this.weeklyStudyMinutes() * 52);
   readonly weeklyDistractionMinutes = computed(() =>
     this.activeActivities()
       .filter((activity) => activity.distraction)
@@ -253,13 +340,47 @@ export class App {
   readonly distractionChartTotalMinutes = computed(() =>
     this.distractionChartEntries().reduce((total, entry) => total + entry.minutes, 0),
   );
+  readonly impactEntries = computed<ImpactEntry[]>(() =>
+    this.activeActivities()
+      .filter((activity) => activity.kind === 'study' || activity.distraction)
+      .map((activity) => ({
+        id: activity.id,
+        name: this.activityName(activity),
+        color: activity.color,
+        minutes: WEEKDAYS.reduce((total, day) => total + activity.minutesByDay[day.id], 0),
+      })),
+  );
+  readonly scenarioComparison = computed<ScenarioComparison | null>(() => {
+    const schedules = this.scenarioSchedules();
+    if (!schedules.alternative) {
+      return null;
+    }
 
-  private nextActivityId = this.restoredState.nextActivityId;
+    return {
+      baseMinutes: this.scheduleWeeklyMinutes(schedules.base),
+      alternativeMinutes: this.scheduleWeeklyMinutes(schedules.alternative),
+      baseStudyMinutes: this.activityWeeklyMinutes(schedules.base, (activity) => activity.kind === 'study'),
+      alternativeStudyMinutes: this.activityWeeklyMinutes(schedules.alternative, (activity) => activity.kind === 'study'),
+      baseDistractionMinutes: this.activityWeeklyMinutes(schedules.base, (activity) => activity.distraction),
+      alternativeDistractionMinutes: this.activityWeeklyMinutes(schedules.alternative, (activity) => activity.distraction),
+    };
+  });
+
+  private nextActivityId = nextCustomActivityId(
+    this.restoredState.activities,
+    this.restoredState.alternativeActivities ?? [],
+  );
 
   constructor() {
     effect(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, activities: this.activities() }));
+        const schedules = this.scenarioSchedules();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          version: 2,
+          baseActivities: schedules.base,
+          alternativeActivities: schedules.alternative,
+          scenario: this.activeScenario(),
+        }));
         this.storageStatus.set('Guardado automáticamente en este navegador');
       } catch {
         this.storageStatus.set('No se pudieron guardar los cambios en este navegador');
@@ -343,6 +464,35 @@ export class App {
     return this.activities().some((activity) => activity.kind === kind && activity.enabled);
   }
 
+  createOrResetAlternative(): void {
+    const base = this.activeScenario() === 'base' ? this.activities() : this.baseActivities();
+    const alternative = cloneActivities(base);
+    this.baseActivities.set(base);
+    this.alternativeActivities.set(alternative);
+    this.activeScenario.set('alternative');
+    this.activities.set(alternative);
+  }
+
+  switchScenario(scenario: Scenario): void {
+    if (scenario === this.activeScenario() || !this.alternativeActivities()) {
+      return;
+    }
+
+    if (scenario === 'alternative') {
+      this.baseActivities.set(this.activities());
+      const alternative = this.alternativeActivities();
+      if (alternative) {
+        this.activeScenario.set('alternative');
+        this.activities.set(alternative);
+      }
+      return;
+    }
+
+    this.alternativeActivities.set(this.activities());
+    this.activeScenario.set('base');
+    this.activities.set(this.baseActivities());
+  }
+
   addActivity(): void {
     const id = `activity-${this.nextActivityId++}`;
     this.activities.update((activities) => [
@@ -381,19 +531,29 @@ export class App {
   }
 
   removeActivity(activityId: string): void {
-    this.activities.update((activities) => activities.filter((activity) => activity.id !== activityId));
+    this.activities.update((activities) =>
+      activities.filter((activity) => activity.id !== activityId || activity.kind === 'study'),
+    );
   }
 
   toggleDistraction(activityId: string): void {
     this.activities.update((activities) =>
       activities.map((activity) =>
-        activity.id === activityId ? { ...activity, distraction: !activity.distraction } : activity,
+        activity.id === activityId && activity.kind !== 'study'
+          ? { ...activity, distraction: !activity.distraction }
+          : activity,
       ),
     );
   }
 
   exportData(): void {
-    const contents = JSON.stringify({ version: 1, activities: this.activities() }, null, 2);
+    const schedules = this.scenarioSchedules();
+    const contents = JSON.stringify({
+      version: 2,
+      baseActivities: schedules.base,
+      alternativeActivities: schedules.alternative,
+      scenario: this.activeScenario(),
+    }, null, 2);
     const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = url;
@@ -422,20 +582,41 @@ export class App {
   importData(contents: string): void {
     try {
       const parsed: unknown = JSON.parse(contents);
-      if (
-        typeof parsed !== 'object' ||
-        parsed === null ||
-        !('version' in parsed) ||
-        parsed.version !== 1 ||
-        !('activities' in parsed) ||
-        !isActivityList(parsed.activities)
-      ) {
+      if (typeof parsed !== 'object' || parsed === null || !('version' in parsed)) {
         this.storageStatus.set('El archivo no tiene un formato de respaldo válido');
         return;
       }
 
-      this.activities.set(parsed.activities);
-      this.nextActivityId = nextCustomActivityId(parsed.activities);
+      let base: Activity[];
+      let alternative: Activity[] | null = null;
+      let scenario: Scenario = 'base';
+      if (parsed.version === 1 && 'activities' in parsed && isActivityList(parsed.activities)) {
+        base = ensureStudyActivity(parsed.activities);
+      } else if (
+        parsed.version === 2 &&
+        'baseActivities' in parsed &&
+        isActivityList(parsed.baseActivities) &&
+        'alternativeActivities' in parsed &&
+        (parsed.alternativeActivities === null || isActivityList(parsed.alternativeActivities)) &&
+        'scenario' in parsed &&
+        (parsed.scenario === 'base' || parsed.scenario === 'alternative')
+      ) {
+        base = ensureStudyActivity(parsed.baseActivities);
+        alternative = parsed.alternativeActivities === null
+          ? null
+          : ensureStudyActivity(parsed.alternativeActivities);
+        scenario = parsed.scenario === 'alternative' && alternative ? 'alternative' : 'base';
+      } else {
+        this.storageStatus.set('El archivo no tiene un formato de respaldo válido');
+        return;
+      }
+
+      this.baseActivities.set(base);
+      this.alternativeActivities.set(alternative);
+      this.activeScenario.set(scenario);
+      const currentActivities = scenario === 'alternative' && alternative ? alternative : base;
+      this.activities.set(currentActivities);
+      this.nextActivityId = nextCustomActivityId(base, alternative ?? []);
       this.storageStatus.set('Respaldo importado correctamente');
     } catch {
       this.storageStatus.set('El archivo no contiene JSON válido');
@@ -510,6 +691,24 @@ export class App {
     return `${Math.round(percent)}%`;
   }
 
+  impactPercent(minutes: number, period: 'week' | 'month' | 'year'): string {
+    const weekCapacity = 7 * 24 * 60;
+    const periodCapacity = period === 'week'
+      ? weekCapacity
+      : period === 'month'
+        ? (weekCapacity * 52) / 12
+        : weekCapacity * 52;
+    return `${((minutes / periodCapacity) * 100).toFixed(1)}%`;
+  }
+
+  differenceLabel(baseMinutes: number, alternativeMinutes: number): string {
+    const difference = alternativeMinutes - baseMinutes;
+    if (difference === 0) {
+      return 'Sin cambio';
+    }
+    return `${difference > 0 ? '+' : '−'}${this.formatDuration(Math.abs(difference))}`;
+  }
+
   setChartMode(mode: ChartMode): void {
     this.chartMode.set(mode);
   }
@@ -525,8 +724,25 @@ export class App {
     return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
   }
 
+  private scheduleWeeklyMinutes(activities: Activity[]): number {
+    return this.activityWeeklyMinutes(activities, () => true);
+  }
+
+  private activityWeeklyMinutes(activities: Activity[], matches: (activity: Activity) => boolean): number {
+    return activities
+      .filter((activity) => activity.enabled && matches(activity))
+      .reduce(
+        (total, activity) => total + WEEKDAYS.reduce((sum, day) => sum + activity.minutesByDay[day.id], 0),
+        0,
+      );
+  }
+
   resetExample(): void {
-    this.activities.set(createExampleActivities());
+    const example = createExampleActivities();
+    this.baseActivities.set(example);
+    this.alternativeActivities.set(null);
+    this.activeScenario.set('base');
+    this.activities.set(example);
     this.nextActivityId = 1;
     this.chartMode.set('day');
     this.selectedChartDay.set('mon');

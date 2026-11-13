@@ -128,7 +128,7 @@ describe('App', () => {
 
     expect(app.weeklyDistractionMinutes()).toBe(75);
     app.addActivity();
-    expect(app.activities()[1].id).toBe('activity-9');
+    expect(app.activities().some((activity) => activity.id === 'activity-9')).toBe(true);
 
     app.importData('{"version":2,"activities":[]}');
     expect(app.weeklyDistractionMinutes()).toBe(75);
@@ -138,11 +138,80 @@ describe('App', () => {
   it('should save activity changes in browser storage', async () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
-    app.toggleDistraction('study');
+    app.addActivity();
+    const activity = app.activities().find((item) => item.kind === 'custom');
+    if (!activity) {
+      throw new Error('Expected a custom activity');
+    }
+    app.toggleDistraction(activity.id);
     fixture.detectChanges();
     await fixture.whenStable();
 
     const saved = JSON.parse(localStorage.getItem('ritmo-time-data') ?? '{}');
-    expect(saved.activities[0].distraction).toBe(true);
+    expect(saved.baseActivities.find((item: { id: string }) => item.id === activity.id).distraction).toBe(true);
+  });
+
+  it('should keep Study fixed and prevent it from being marked as a distraction', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+
+    app.toggleDistraction('study');
+    app.removeActivity('study');
+
+    expect(app.activities().find((activity) => activity.id === 'study')).toMatchObject({
+      kind: 'study',
+      name: 'Estudio',
+      distraction: false,
+    });
+  });
+
+  it('should clone the base schedule, edit an alternative, and compare the two', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.createOrResetAlternative();
+    app.updateActivityDuration('study', 'mon', 'hours', 2);
+    app.addActivity();
+    const distraction = app.activities().find((activity) => activity.kind === 'custom');
+    if (!distraction) {
+      throw new Error('Expected the alternative to contain a custom activity');
+    }
+    app.renameActivity(distraction.id, 'Redes');
+    app.updateActivityDuration(distraction.id, 'mon', 'minutes', 30);
+    app.toggleDistraction(distraction.id);
+
+    expect(app.scenarioComparison()).toMatchObject({
+      baseMinutes: 540,
+      alternativeMinutes: 630,
+      baseStudyMinutes: 540,
+      alternativeStudyMinutes: 600,
+      baseDistractionMinutes: 0,
+      alternativeDistractionMinutes: 30,
+    });
+    expect(app.impactEntries().map((entry) => entry.name)).toEqual(['Estudio', 'Redes']);
+    expect(app.impactPercent(540, 'week')).toBe('5.4%');
+
+    app.switchScenario('base');
+    expect(app.activities().find((activity) => activity.id === 'study')?.minutesByDay.mon).toBe(60);
+    app.switchScenario('alternative');
+    expect(app.activities().find((activity) => activity.id === 'study')?.minutesByDay.mon).toBe(120);
+  });
+
+  it('should persist the base and alternative without creating a history', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    app.createOrResetAlternative();
+    app.updateActivityDuration('study', 'mon', 'hours', 3);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const saved = JSON.parse(localStorage.getItem('ritmo-time-data') ?? '{}');
+    expect(saved.version).toBe(2);
+    expect(saved.baseActivities.find((activity: { id: string }) => activity.id === 'study').minutesByDay.mon).toBe(60);
+    expect(saved.alternativeActivities.find((activity: { id: string }) => activity.id === 'study').minutesByDay.mon).toBe(180);
+
+    const restoredFixture = TestBed.createComponent(App);
+    const restoredApp = restoredFixture.componentInstance;
+    expect(restoredApp.activeScenario()).toBe('alternative');
+    expect(restoredApp.weeklyStudyMinutes()).toBe(660);
   });
 });

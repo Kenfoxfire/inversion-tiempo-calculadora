@@ -1,8 +1,10 @@
 # Ritmo — Calculadora de inversión de tiempo
 
-Organiza el horario semanal por categorías y visualiza cómo se distribuye el tiempo durante un día o una semana. Puedes activar trabajo y almuerzo, agregar actividades con nombre propio, asignar horas y minutos de lunes a domingo y cambiar el gráfico entre el periodo completo o solo el tiempo registrado. Marca las actividades que consideres una distracción para ver su desglose y el impacto semanal y anual.
+Calcula una semana tipo por categorías y visualiza cómo se distribuye el tiempo durante un día o una semana. Puedes activar trabajo y almuerzo, agregar actividades con nombre propio y asignar horas y minutos de lunes a domingo. La categoría Estudio es fija y no se puede marcar como distracción.
 
-Los cambios se guardan automáticamente en el almacenamiento local del navegador. Usa **Descargar respaldo JSON** para conservar una copia o **Cargar respaldo JSON** para restaurarla en este u otro navegador.
+Marca otras actividades como distracción para revisar su peso junto con Estudio, por semana, mes promedio y año, tanto en duración como en porcentaje del tiempo disponible. Puedes crear una alternativa a partir de la distribución base, modificarla y comparar los totales sin mantener una cronología.
+
+La distribución base y su alternativa se guardan automáticamente en el almacenamiento local del navegador. Usa **Descargar respaldo JSON** para conservar una copia o **Cargar respaldo JSON** para restaurarla en este u otro navegador.
 
 ## Desarrollo
 
@@ -20,8 +22,9 @@ Abre `http://localhost:4200/` en el navegador.
 - **Año:** total semanal × 52.
 - **Gráfico diario:** muestra la distribución para el día seleccionado sobre un total de 24 horas, o solo las horas registradas.
 - **Gráfico semanal:** muestra la distribución semanal sobre un total de 168 horas, o solo las horas registradas.
-- **Distracciones:** el gráfico independiente desglosa el tiempo marcado como distracción; el resumen muestra su total semanal, anual y su equivalente en días completos.
-- **Respaldo:** importa y exporta un archivo JSON versionado con las actividades y sus duraciones.
+- **Impacto:** Estudio y cada actividad marcada como distracción muestran duración y porcentaje del tiempo disponible para semana, mes promedio y año.
+- **Comparación:** permite editar una alternativa independiente y contrastar el total semanal, Estudio y las distracciones marcadas con la distribución base.
+- **Respaldo:** importa y exporta un archivo JSON versionado con ambas distribuciones. Se aceptan respaldos de la versión anterior.
 
 El tiempo no asignado aparece como una categoría del gráfico cuando se elige el periodo completo. Si las actividades superan las horas disponibles, la calculadora avisa y muestra la proporción del tiempo registrado.
 

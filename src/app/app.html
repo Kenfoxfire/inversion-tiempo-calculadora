@@ -17,7 +17,7 @@
       <div>
         <p class="eyebrow">TU PLAN, CON PERSPECTIVA</p>
         <h1>Las horas de hoy<br /><span>construyen tu mañana.</span></h1>
-        <p class="intro-copy">Registra en qué inviertes tus horas, detecta distracciones y observa su impacto a lo largo del tiempo.</p>
+        <p class="intro-copy">Calcula una semana tipo, mide el peso de Estudio y las distracciones, y compara una alternativa sin guardar historial.</p>
       </div>
       <div class="intro-decoration" aria-hidden="true">
         <span class="decoration-orbit orbit-one"></span>
@@ -73,6 +73,17 @@
             <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M16.1 7.2A6.5 6.5 0 0 0 4.6 5.6L3.2 7M3.2 7V3.8M3.2 7h3.2M3.9 12.8a6.5 6.5 0 0 0 11.5 1.6l1.4-1.4m0 0v3.2m0-3.2h-3.2" /></svg>
             <span>Restablecer</span>
           </button>
+        </div>
+
+        <div class="scenario-switch" role="group" aria-label="Escenario que estás editando">
+          @if (hasAlternative()) {
+            <button type="button" [class.scenario-active]="activeScenario() === 'base'" [attr.aria-pressed]="activeScenario() === 'base'" (click)="switchScenario('base')">Distribución base</button>
+            <button type="button" [class.scenario-active]="activeScenario() === 'alternative'" [attr.aria-pressed]="activeScenario() === 'alternative'" (click)="switchScenario('alternative')">Alternativa</button>
+            <button class="scenario-reset" type="button" (click)="createOrResetAlternative()">Copiar base a alternativa</button>
+          } @else {
+            <button class="scenario-create" type="button" (click)="createOrResetAlternative()">＋ Crear alternativa desde esta distribución</button>
+            <span>Compara otra posibilidad sin reemplazar tu distribución base.</span>
+          }
         </div>
 
         <div class="activity-toolbar">
@@ -139,16 +150,20 @@
                         <span class="activity-heading-name">{{ activity.name }}</span>
                       }
                     </div>
-                    <button
-                      class="distraction-toggle"
-                      [class.distraction-toggle-on]="activity.distraction"
-                      type="button"
-                      [attr.aria-pressed]="activity.distraction"
-                      [attr.aria-label]="(activity.distraction ? 'Quitar etiqueta distracción de ' : 'Marcar como distracción: ') + activityName(activity)"
-                      (click)="toggleDistraction(activity.id)"
-                    >
-                      <span aria-hidden="true">●</span> Distracción
-                    </button>
+                    @if (activity.kind === 'study') {
+                      <span class="study-fixed-label">No es distracción</span>
+                    } @else {
+                      <button
+                        class="distraction-toggle"
+                        [class.distraction-toggle-on]="activity.distraction"
+                        type="button"
+                        [attr.aria-pressed]="activity.distraction"
+                        [attr.aria-label]="(activity.distraction ? 'Quitar etiqueta distracción de ' : 'Marcar como distracción: ') + activityName(activity)"
+                        (click)="toggleDistraction(activity.id)"
+                      >
+                        <span aria-hidden="true">●</span> Distracción
+                      </button>
+                    }
                   </th>
                 }
               </tr>
@@ -219,6 +234,35 @@
         @if (weekOverbooked()) {
           <p class="schedule-warning" role="status">Hay días con más de 24 horas programadas. Revisa las categorías superpuestas.</p>
         }
+
+        <section class="impact-panel" aria-labelledby="impact-title">
+          <div class="impact-heading">
+            <h3 id="impact-title">Impacto de Estudio y distracciones</h3>
+            <span>Porcentaje del tiempo disponible</span>
+          </div>
+          <div class="impact-table-scroll">
+            <table class="impact-table">
+              <thead>
+                <tr>
+                  <th scope="col">Actividad</th>
+                  <th scope="col">Semana</th>
+                  <th scope="col">Mes promedio</th>
+                  <th scope="col">Año</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (entry of impactEntries(); track entry.id) {
+                  <tr>
+                    <th scope="row"><span class="impact-swatch" [style.background]="entry.color"></span>{{ entry.name }}</th>
+                    <td><strong>{{ formatDuration(entry.minutes) }}</strong><span>{{ impactPercent(entry.minutes, 'week') }}</span></td>
+                    <td><strong>{{ formatDuration(entry.minutes * 52 / 12) }}</strong><span>{{ impactPercent(entry.minutes * 52 / 12, 'month') }}</span></td>
+                    <td><strong>{{ formatDuration(entry.minutes * 52) }}</strong><span>{{ impactPercent(entry.minutes * 52, 'year') }}</span></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
       </article>
 
       <aside class="insight-card">
@@ -288,6 +332,45 @@
         </p>
       </aside>
     </section>
+
+    @if (scenarioComparison(); as comparison) {
+      <section class="comparison-card" aria-labelledby="comparison-title">
+        <div class="comparison-heading">
+          <div>
+            <p class="eyebrow">COMPARA SIN GUARDAR HISTORIAL</p>
+            <h2 id="comparison-title">¿Qué cambia en la alternativa?</h2>
+          </div>
+          <span>Distribución semanal</span>
+        </div>
+        <div class="comparison-table-scroll">
+          <table class="comparison-table">
+            <thead>
+              <tr><th scope="col">Indicador</th><th scope="col">Base</th><th scope="col">Alternativa</th><th scope="col">Cambio semanal</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Tiempo total</th>
+                <td>{{ formatDuration(comparison.baseMinutes) }}</td>
+                <td>{{ formatDuration(comparison.alternativeMinutes) }}</td>
+                <td>{{ differenceLabel(comparison.baseMinutes, comparison.alternativeMinutes) }}</td>
+              </tr>
+              <tr>
+                <th scope="row">Estudio</th>
+                <td>{{ formatDuration(comparison.baseStudyMinutes) }}</td>
+                <td>{{ formatDuration(comparison.alternativeStudyMinutes) }}</td>
+                <td>{{ differenceLabel(comparison.baseStudyMinutes, comparison.alternativeStudyMinutes) }}</td>
+              </tr>
+              <tr>
+                <th scope="row">Distracciones marcadas</th>
+                <td>{{ formatDuration(comparison.baseDistractionMinutes) }}</td>
+                <td>{{ formatDuration(comparison.alternativeDistractionMinutes) }}</td>
+                <td>{{ differenceLabel(comparison.baseDistractionMinutes, comparison.alternativeDistractionMinutes) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
 
     <section class="distraction-card" aria-labelledby="distraction-title">
       <div class="distraction-summary">
